@@ -6,11 +6,9 @@ layout: doc_page
 
 ### Realtime Ingestion
 
-If you are trying to stream in historical (not current time) data into Druid and you are using the [serverTime](../ingestion/realtime-ingestion.html) rejection policy in your ingestion spec (the default rejection policy), Druid will not ingest this data as it is outside of the acceptable window period. You can verify this is what is happening by looking at the logs of your real-time process for log lines containing "ingest/events/*". These metrics will indicate the events ingested, rejected, etc. We recommend using batch ingestion methods for historical data in production.
-
-If you are doing a POC, you can use the [messageTime](../ingestion/realtime-ingestion.html) rejection policy, but please be aware of the hand-off caveats. This rejection policy is not recommended in production. 
-
-If you are experimenting with realtime ingestion, you can also use the [none](../ingestion/realtime-ingestion.html) rejection policy to load all incoming events, but hand-off will never occur. 
+The most common cause of this is because events being ingested are out of band of Druid's `windowPeriod`. Druid realtime ingestion 
+only accepts events within a configurable windowPeriod of the current time. You can verify this is what is happening by looking at the logs of your real-time process for log lines containing "ingest/events/*". These metrics will indicate the events ingested, rejected, etc. 
+We recommend using batch ingestion methods for historical data in production. 
  
 ### Batch Ingestion
  
@@ -18,7 +16,7 @@ If you are trying to batch load historical data but no events are being loaded, 
 
 ## What types of data does Druid support?
 
-Druid can ingest JSON, CSV, TSV and other delimited data out of the box. Druid supports single dimension values, or multiple dimension values (an array of strings). Druid supports long and float numeric columns.
+Druid can ingest JSON, CSV, TSV and other delimited data out of the box. Druid supports single dimension values, or multiple dimension values (an array of strings). Druid supports long, float, and double numeric columns.
 
 ## Not all of my events were ingested
 
@@ -30,17 +28,17 @@ If the number of ingested events seem correct, make sure your query is correctly
 
 Depending on what `druid.storage.type` is set to, Druid will upload segments to some [Deep Storage](../dependencies/deep-storage.html). Local disk is used as the default deep storage.
 
-## My realtime node is not handing segments off
+## My stream ingest is not handing segments off
 
-First, make sure there are no exceptions in the logs of your node. Also make sure that `druid.storage.type` is set to a deep storage that makes sense.
+First, make sure there are no exceptions in the logs of the ingestion process. Also make sure that `druid.storage.type` is set to a deep storage that isn't `local` if you are running a distributed cluster.
 
 Other common reasons that hand-off fails are as follows:
 
-1) Druid is unable to write to the metadata storage. Make sure your configuration is correct.
+1) Druid is unable to write to the metadata storage. Make sure your configurations are correct.
 
-2) Historical nodes are out of capacity and cannot download any more segments. You'll see exceptions in the coordinator logs if this occurs.
+2) Historical nodes are out of capacity and cannot download any more segments. You'll see exceptions in the coordinator logs if this occurs and the coordinator console will show the historicals are near capacity.
 
-3) Segments are corrupt and cannot download. You'll see exceptions in your historical nodes if this occurs.
+3) Segments are corrupt and cannot be downloaded. You'll see exceptions in your historical nodes if this occurs.
 
 4) Deep storage is improperly configured. Make sure that your segment actually exists in deep storage and that the coordinator logs have no errors.
 
@@ -49,6 +47,7 @@ Other common reasons that hand-off fails are as follows:
 Make sure to include the `druid-hdfs-storage` and all the hadoop configuration, dependencies (that can be obtained by running command `hadoop classpath` on a machine where hadoop has been setup) in the classpath. And, provide necessary HDFS settings as described in [Deep Storage](../dependencies/deep-storage.html) .
 
 ## I don't see my Druid segments on my historical nodes
+
 You can check the coordinator console located at `<COORDINATOR_IP>:<PORT>`. Make sure that your segments have actually loaded on [historical nodes](../design/historical.html). If your segments are not present, check the coordinator logs for messages about capacity of replication errors. One reason that segments are not downloaded is because historical nodes have maxSizes that are too small, making them incapable of downloading more data. You can change that with (for example):
 
 ```
@@ -58,21 +57,25 @@ You can check the coordinator console located at `<COORDINATOR_IP>:<PORT>`. Make
 
 ## My queries are returning empty results
 
-You can check `<BROKER_IP>:<PORT>/druid/v2/datasources/<YOUR_DATASOURCE>?interval=0/3000` for the dimensions and metrics that have been created for your datasource. Make sure that the name of the aggregators you use in your query match one of these metrics. Also make sure that the query interval you specify match a valid time range where data exists. Note: the broker endpoint will only return valid results on historical segments and not segments served by real-time nodes.
+You can use a [segment metadata query](../querying/segmentmetadataquery.html) for the dimensions and metrics that have been created for your datasource. Make sure that the name of the aggregators you use in your query match one of these metrics. Also make sure that the query interval you specify match a valid time range where data exists.
 
 ## How can I Reindex existing data in Druid with schema changes?
 
 You can use IngestSegmentFirehose with index task to ingest existing druid segments using a new schema and change the name, dimensions, metrics, rollup, etc. of the segment.
 See [Firehose](../ingestion/firehose.html) for more details on IngestSegmentFirehose.
-Or, if you use hadoop based ingestion, then you can use "dataSource" input spec to do reindexing. See [batch-ingestion](../ingestion/batch-ingestion.html) for more details.
+Or, if you use hadoop based ingestion, then you can use "dataSource" input spec to do reindexing.
+
+See [Update Existing Data](../ingestion/update-existing-data.html) for more details.
 
 ## How can I change the granularity of existing data in Druid?
 
 In a lot of situations you may want to lower the granularity of older data. Example, any data older than 1 month has only hour level granularity but newer data has minute level granularity. This use case is same as re-indexing.
 
-To do this use the IngestSegmentFirehose and run an indexer task. The IngestSegment firehose will allow you to take in existing segments from Druid and aggregate them and feed them back into druid. It will also allow you to filter the data in those segments while feeding it back in. This means if there are rows you want to delete, you can just filter them away during re-ingestion.
+To do this use the IngestSegmentFirehose and run an indexer task. The IngestSegment firehose will allow you to take in existing segments from Druid and aggregate them and feed them back into Druid. It will also allow you to filter the data in those segments while feeding it back in. This means if there are rows you want to delete, you can just filter them away during re-ingestion.
 Typically the above will be run as a batch job to say everyday feed in a chunk of data and aggregate it.
-Or, if you use hadoop based ingestion, then you can use "dataSource" input spec to do reindexing. See [batch-ingestion](../ingestion/batch-ingestion.html) for more details.
+Or, if you use hadoop based ingestion, then you can use "dataSource" input spec to do reindexing.
+
+See [Update Existing Data](../ingestion/update-existing-data.html) for more details.
 
 ## Real-time ingestion seems to be stuck
 

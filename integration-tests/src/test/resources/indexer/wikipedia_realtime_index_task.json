@@ -25,12 +25,13 @@
         }
       ],
       "granularitySpec": {
-        "segmentGranularity": "DAY",
+        "segmentGranularity": "minute",
         "queryGranularity": "second"
       },
       "parser": {
         "type": "map",
         "parseSpec": {
+          "format": "tsv",
           "columns": [
             "timestamp",
             "page",
@@ -90,7 +91,7 @@
       "intermediatePersistPeriod": "PT1M",
       "windowPeriod": "PT1M",
       "rejectionPolicy": {
-        "type": "none"
+        "type": "serverTime"
       }
     }
   }

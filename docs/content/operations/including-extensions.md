@@ -1,34 +1,67 @@
 ---
 layout: doc_page
 ---
-# Including Extensions
 
-Druid uses a module system that allows for the addition of extensions at runtime.
+# Loading extensions
 
-## Specifying extensions
+## Loading core extensions
 
-Druid extensions can be specified in the `common.runtime.properties`. There are two ways of adding druid extensions currently.
+Druid bundles all [core extensions](../development/extensions.html#core-extensions) out of the box. 
+See the [list of extensions](../development/extensions.html#core-extensions) for your options. You 
+can load bundled extensions by adding their names to your common.runtime.properties 
+`druid.extensions.loadList` property. For example, to load the *postgresql-metadata-storage* and 
+*druid-hdfs-storage* extensions, use the configuration:
 
-### Add to the classpath
+```
+druid.extensions.loadList=["postgresql-metadata-storage", "druid-hdfs-storage"]
+```
 
-If you add your extension jar to the classpath at runtime, Druid will load it into the system.  This mechanism is relatively easy to reason about, but it also means that you have to ensure that all dependency jars on the classpath are compatible.  That is, Druid makes no provisions while using this method to maintain class loader isolation so you must make sure that the jars on your classpath are mutually compatible.
+These extensions are located in the `extensions` directory of the distribution.
 
-### Specify maven coordinates
+<div class="note info">
+Druid bundles two sets of configurations: one for the <a href="../tutorials/quickstart.html">quickstart</a> and 
+one for a <a href="../tutorials/cluster.html">clustered configuration</a>. Make sure you are updating the correct 
+common.runtime.properties for your setup.
+</div>
 
-Druid has the ability to automatically load extension jars from maven at runtime.  With this mechanism, Druid also loads up the dependencies of the extension jar into an isolated class loader.  That means that your extension can depend on a different version of a library that Druid also uses and both can co-exist.
+<div class="note caution">
+Because of licensing, the mysql-metadata-storage extension is not packaged with the default Druid tarball. In order to get it, you can download it from <a href="http://druid.io/downloads.html">druid.io</a>, 
+then unpack and move it into the extensions directory. Make sure to include the name of the extension in the loadList configuration.
+</div>
 
-### I want classloader isolation, but I don't want my production machines downloading their own dependencies.  What should I do?
+## Loading community and third-party extensions (contrib extensions)
 
-If you want to take advantage of the maven-based classloader isolation but you are also rightly frightened by the prospect of each of your production machines downloading their own dependencies on deploy, this section is for you.
+You can also load community and third-party extensions not already bundled with Druid. To do this, first download the extension and 
+then install it into your `extensions` directory. You can download extensions from their distributors directly, or 
+if they are available from Maven, the included [pull-deps](../operations/pull-deps.html) can download them for you. To use *pull-deps*, 
+specify the full Maven coordinate of the extension in the form `groupId:artifactId:version`. For example, 
+for the (hypothetical) extension *com.example:druid-example-extension:1.0.0*, run: 
 
-The trick to doing this is
+```
+java \
+  -cp "lib/*" \
+  -Ddruid.extensions.directory="extensions" \
+  -Ddruid.extensions.hadoopDependenciesDir="hadoop-dependencies" \
+  org.apache.druid.cli.Main tools pull-deps \
+  --no-default-hadoop \
+  -c "com.example:druid-example-extension:1.0.0"
+```
 
-1) Specify a local directory for `druid.extensions.localRepository`
+You only have to install the extension once. Then, add `"druid-example-extension"` to 
+`druid.extensions.loadList` in common.runtime.properties to instruct Druid to load the extension.
 
-2) Run the `tools pull-deps` command to pull all the specified dependencies down into your local repository
+<div class="note info">
+Please make sure all the Extensions related configuration properties listed <a href="../configuration/index.html#extensions">here</a> are set correctly.
+</div>
 
-3) Bundle up the local repository along with your other Druid stuff into whatever you use for a deployable artifact
+<div class="note info">
+The Maven groupId for almost every <a href="../development/extensions.html#community-extensions">community extension</a> is org.apache.druid.extensions.contrib. The artifactId is the name 
+of the extension, and the version is the latest Druid stable version.
+</div>
 
-4) Run Your druid processes with `druid.extensions.remoteRepositories=[]` and a local repository set to wherever your bundled "local" repository is located
 
-The Druid processes will then only load up jars from the local repository and will not try to go out onto the internet to find the maven dependencies.
+## Loading extensions from classpath
+
+If you add your extension jar to the classpath at runtime, Druid will also load it into the system.  This mechanism is relatively easy to reason about, 
+but it also means that you have to ensure that all dependency jars on the classpath are compatible.  That is, Druid makes no provisions while using 
+this method to maintain class loader isolation so you must make sure that the jars on your classpath are mutually compatible.

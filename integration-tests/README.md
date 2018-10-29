@@ -1,49 +1,69 @@
-Integration Testing
-=========================
+Integration Testing 
+===================
 
-## Installing Docker and Running
+To run integration tests, you have to specify the druid cluster the
+tests should use.  
 
-Please refer to instructions at [https://github.com/druid-io/docker-druid/blob/master/docker-install.md](https://github.com/druid-io/docker-druid/blob/master/docker-install.md)
+Druid comes with the mvn profile integration-tests
+for setting up druid running in docker containers, and using that
+cluster to run the integration tests.
 
-Instead of running
-```
-boot2docker init
-```
+To use a druid cluster that is already running, use the
+mvn profile int-tests-config-file, which uses a configuration file 
+describing the cluster.
 
-run instead
-```
-boot2docker init -m 6000
-```
+Integration Testing Using Docker 
+-------------------
 
-Make sure that you have at least 6GB of memory available before you run the tests.
-
-Set the docker ip via:
-```
-export DOCKER_IP=$(boot2docker ip 2>/dev/null)
-```
-
-Verify that docker is running by issuing the following command:
+For running integration tests using docker there are 2 approaches.
+If your platform supports docker natively, you can simply set `DOCKER_IP`
+environment variable to localhost and skip to [Running tests](#running-tests) section.
 
 ```
-docker info
+export DOCKER_IP=127.0.0.1
 ```
 
-Running Integration tests
-=========================
+The other approach is to use separate virtual machine to run docker
+containers with help of `docker-machine` tool.
 
-## Starting docker tests
+## Installing Docker Machine
 
-To run all the tests using docker and mvn run the following command -
+Please refer to instructions at [https://github.com/druid-io/docker-druid/blob/master/docker-install.md](https://github.com/druid-io/docker-druid/blob/master/docker-install.md).
+
+## Creating the Docker VM
+
+Create a new VM for integration tests with at least 6GB of memory.
+
+```
+docker-machine create --driver virtualbox --virtualbox-memory 6000 integration
+```
+
+Set the docker environment:
+
+```
+eval "$(docker-machine env integration)"
+export DOCKER_IP=$(docker-machine ip integration)
+export DOCKER_MACHINE_IP=$(docker-machine inspect integration | jq -r .Driver[\"HostOnlyCIDR\"])
+```
+
+The final command uses the `jq` tool to read the Driver->HostOnlyCIDR field from the `docker-machine inspect` output. If you don't wish to install `jq`, you will need to set DOCKER_MACHINE_IP manually.
+
+## Running tests
+
+To run all the tests using docker and mvn run the following command:
 ```
   mvn verify -P integration-tests
 ```
 
-To run only a single test using mvn run the following command -
+To run only a single test using mvn run the following command:
 ```
   mvn verify -P integration-tests -Dit.test=<test_name>
 ```
 
-## Configure and run integration tests using existing cluster
+Running Tests Using A Configuration File for Any Cluster
+-------------------
+
+Make sure that you have at least 6GB of memory available before you run the tests.
 
 To run tests on any druid cluster that is already running, create a configuration file:
 
@@ -56,27 +76,88 @@ To run tests on any druid cluster that is already running, create a configuratio
        "indexer_port": "<indexer_port>",
        "coordinator_host": "<coordinator_ip>",
        "coordinator_port": "<coordinator_port>",
-       "middle_manager_host": "<middle_manager_ip>",
+       "middlemanager_host": "<middle_manager_ip>",
        "zookeeper_hosts": "<comma-separated list of zookeeper_ip:zookeeper_port>",
     }
 
-Set the environment variable CONFIG_FILE to the name of the configuration file -
+Set the environment variable CONFIG_FILE to the name of the configuration file:
 ```
 export CONFIG_FILE=<config file name>
 ```
 
-To run all the tests using mvn run the following command -
+To run all the tests using mvn run the following command: 
 ```
   mvn verify -P int-tests-config-file
 ```
 
-To run only a single test using mvn run the following command -
+To run only a single test using mvn run the following command:
 ```
   mvn verify -P int-tests-config-file -Dit.test=<test_name>
 ```
 
+Running a Test That Uses Hadoop
+-------------------
+
+The integration test that indexes from hadoop is not run as part
+of the integration test run discussed above.  This is because druid
+test clusters might not, in general, have access to hadoop.
+That's the case (for now, at least) when using the docker cluster set 
+up by the integration-tests profile, so the hadoop test
+has to be run using a cluster specified in a configuration file.
+
+The data file is 
+integration-tests/src/test/resources/hadoop/batch_hadoop.data.
+Create a directory called batchHadoop1 in the hadoop file system
+(anywhere you want) and put batch_hadoop.data into that directory
+(as its only file).
+
+Add this keyword to the configuration file (see above):
+
+```
+    "hadoopTestDir": "<name_of_dir_containing_batchHadoop1>"
+```
+
+Run the test using mvn:
+
+```
+  mvn verify -P int-tests-config-file -Dit.test=ITHadoopIndexTest
+```
+
+In some test environments, the machine where the tests need to be executed
+cannot access the outside internet, so mvn cannot be run.  In that case,
+do the following instead of running the tests using mvn:
+
+### Compile druid and the integration tests
+
+On a machine that can do mvn builds:
+
+```
+cd druid 
+mvn clean package
+cd integration_tests 
+mvn dependency:copy-dependencies package
+```
+
+### Put the compiled test code into your test cluster
+
+Copy the integration-tests directory to the test cluster.
+
+### Set CLASSPATH
+
+```
+TDIR=<directory containing integration-tests>/target
+VER=<version of druid you built>
+export CLASSPATH=$TDIR/dependency/*:$TDIR/druid-integration-tests-$VER.jar:$TDIR/druid-integration-tests-$VER-tests.jar
+```
+
+### Run the test
+
+```
+java -Duser.timezone=UTC -Dfile.encoding=UTF-8 -Ddruid.test.config.type=configFile -Ddruid.test.config.configFile=<pathname of configuration file> org.testng.TestNG -testrunfactory org.testng.DruidTestRunnerFactory -testclass org.apache.druid.tests.hadoop.ITHadoopIndexTest
+```
+
 Writing a New Test
-===============
+-------------------
 
 ## What should we cover in integration tests
 
@@ -84,7 +165,7 @@ For every end-user functionality provided by druid we should have an integration
 
 ## Rules to be followed while writing a new integration test
 
-### Every Integration Test must follow these rules
+### Every Integration Test must follow these rules:
 
 1) Name of the test must start with a prefix "IT"
 2) A test should be independent of other tests
@@ -115,7 +196,3 @@ This will tell the test framework that the test class needs to be constructed us
 2) FromFileTestQueryHelper - reads queries with expected results from file and executes them and verifies the results using ResultVerifier
 
 Refer ITIndexerTest as an example on how to use dependency Injection
-
-TODOS
-=======================
-1) Remove the patch for TestNG after resolution of Surefire-622
